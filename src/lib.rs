@@ -1,7 +1,27 @@
-#![feature(proc_macro_value)]
+use std::env;
 
 use proc_macro::{Literal, Punct, Spacing, TokenStream, TokenTree};
 
+fn parse_string_literal(lit: TokenTree) -> String {
+    let s = lit.to_string();
+
+    let first = s.find('"').expect("expected string literal");
+    let last = s.rfind('"').expect("expected string literal");
+
+    let prefix = &s[..first];
+    let content = &s[first + 1..last];
+    let suffix = &s[last + 1..];
+
+    if !prefix.chars().all(|c| c == 'r' || c == '#') {
+        panic!("only normal and raw string literals are supported");
+    }
+
+    if !suffix.chars().all(|c| c == '#') {
+        panic!("string suffixes are not supported");
+    }
+
+    content.to_string()
+}
 #[proc_macro]
 pub fn concat_into(input: TokenStream) -> TokenStream {
     let mut iter = input.into_iter();
@@ -12,16 +32,16 @@ pub fn concat_into(input: TokenStream) -> TokenStream {
         let token = iter.next().expect("expected string literal or =>");
 
         match token {
-            TokenTree::Literal(lit) => {
-                result.push_str(&lit.str_value().unwrap());
-            }
             TokenTree::Punct(p) if p.as_char() == '=' && p.spacing() == Spacing::Joint => {
                 match iter.next() {
                     Some(TokenTree::Punct(p2)) if p2.as_char() == '>' => break,
                     _ => panic!("expected =>"),
                 }
             }
-            _ => panic!("expected string literal"),
+            TokenTree::Ident(i) => result.push_str(&env::var(i.to_string()).unwrap()),
+            token => {
+                result.push_str(&parse_string_literal(token));
+            }
         }
     }
 
